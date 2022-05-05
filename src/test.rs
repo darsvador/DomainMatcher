@@ -1,9 +1,7 @@
 use crate::ac_automaton::ACAutomaton;
 use crate::ac_automaton::HybridMatcher;
 use crate::mph::MphMatcher;
-use crate::{geosite, DomainMatcher, MatchType};
-use deepsize::DeepSizeOf;
-use std::fs::File;
+use crate::{DomainMatcher, MatchType};
 
 #[cfg(test)]
 fn test_domain_matcher(matcher: &mut impl DomainMatcher) {
@@ -45,96 +43,4 @@ fn test_hybrid_matcher() {
 fn test_mph_matcher() {
     let mut mph_matcher = MphMatcher::new(1);
     test_domain_matcher(&mut mph_matcher);
-}
-
-#[cfg(test)]
-fn test_with_geosite(matcher: &mut impl DomainMatcher) {
-    let file = "data/geosite.dat";
-    let mut f = match File::open(&file) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("open dat file {} failed: {}", file, e);
-            return;
-        }
-    };
-    let site_group_list: geosite::SiteGroupList = match protobuf::Message::parse_from_reader(&mut f)
-    {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("dat file {} has invalid format: {}", file, e);
-            return;
-        }
-    };
-    for i in site_group_list.site_group.iter() {
-        if i.tag.to_uppercase() == "CN" {
-            for domain in i.domain.iter() {
-                match domain.field_type {
-                    geosite::Domain_Type::Plain => {
-                        matcher.reverse_insert(domain.get_value(), MatchType::SubStr(true))
-                    }
-                    geosite::Domain_Type::Domain => {
-                        matcher.reverse_insert(domain.get_value(), MatchType::Domain(true))
-                    }
-                    geosite::Domain_Type::Full => {
-                        matcher.reverse_insert(domain.get_value(), MatchType::Full(true))
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-    matcher.build();
-    for i in site_group_list.site_group.iter() {
-        for domain in i.domain.iter() {
-            match domain.field_type {
-                // we leave the regex match type to regex library.
-                geosite::Domain_Type::Regex => {}
-                _ => {
-                    if i.tag.to_uppercase() == "CN" {
-                        assert_eq!(matcher.reverse_query(domain.get_value()), true)
-                    } else if i.tag.to_uppercase() == "CATEGORY-SCHOLAR-!CN"
-                        && !domain.get_value().contains("cn")
-                    {
-                        assert_eq!(matcher.reverse_query(domain.get_value()), false)
-                    }
-                }
-            }
-        }
-    }
-    assert_eq!(matcher.reverse_query("163.com"), true);
-    assert_eq!(matcher.reverse_query("164.com"), false);
-}
-
-#[test]
-fn test_ac_automaton_with_geosite() {
-    let mut ac_automaton = ACAutomaton::new(15000);
-    test_with_geosite(&mut ac_automaton);
-    println!(
-        "Mem size of ac_automaton: {} mb, trie node count: {}",
-        ac_automaton.deep_size_of() as f32 / (1024.0 * 1024.0),
-        ac_automaton.trie_node_count()
-    );
-    println!("Hello, DomainMatcher!");
-}
-
-#[test]
-fn test_hybrid_matcher_with_geosite() {
-    let mut hybrid_matcher = HybridMatcher::new(1);
-    test_with_geosite(&mut hybrid_matcher);
-    println!(
-        "Mem size of hybrid matcher: {} mb",
-        hybrid_matcher.deep_size_of() as f32 / (1024.0 * 1024.0),
-    );
-    println!("Hello, Hybrid DomainMatcher!");
-}
-
-#[test]
-fn test_mph_matcher_with_geosite() {
-    let mut mph_matcher = MphMatcher::new(1);
-    test_with_geosite(&mut mph_matcher);
-    println!(
-        "Mem size of Mph matcher: {} mb",
-        mph_matcher.deep_size_of() as f32 / (1024.0 * 1024.0),
-    );
-    println!("Hello, Mph DomainMatcher!");
 }
